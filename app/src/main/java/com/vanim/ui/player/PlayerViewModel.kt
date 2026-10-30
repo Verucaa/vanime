@@ -13,6 +13,7 @@ import com.vanim.data.Episode
 import com.vanim.data.LibraryRepository
 import com.vanim.data.OpMark
 import com.vanim.data.nextLowerThan
+import com.vanim.data.rankSimilar
 import com.vanim.data.StreamSource
 import com.vanim.data.local.AppSettings
 import com.vanim.data.local.SettingsStore
@@ -46,6 +47,8 @@ data class PlayerUiState(
     val previous: Episode? = null,
     /** Episodes of the current page, for the portrait episode strip. */
     val nearby: List<Episode> = emptyList(),
+    /** Other titles with similar genres, shown below the episode strip. */
+    val similar: List<Anime> = emptyList(),
     /** Playing a downloaded file; no network needed. */
     val offline: Boolean = false,
     /** One-shot message for the snackbar (download started/failed). */
@@ -59,6 +62,7 @@ class PlayerViewModel(
     private val downloads: DownloadRepository,
     private val settingsStore: SettingsStore,
     private val appScope: CoroutineScope,
+    private val session: PlaybackSession,
     /** Whether the active network is metered (mobile data), for the mobile-data quality setting. */
     private val isMetered: () -> Boolean,
     saved: SavedStateHandle,
@@ -93,6 +97,7 @@ class PlayerViewModel(
         settingsStore.opMark(animeId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var loadJob: Job? = null
+    private var similarJob: Job? = null
 
     /** Height the user picked by hand in this player session; kept for the following episodes. */
     private var sessionHeight: Int? = null
@@ -101,12 +106,27 @@ class PlayerViewModel(
     private val failedUrls = mutableSetOf<String>()
 
     init {
-        if (_state.value.anime == null) {
-            viewModelScope.launch {
-                repo.detail(animeId).onSuccess { a -> _state.update { it.copy(anime = a) } }
+        val restored = session.snapshot?.takeIf { it.episode.id == _state.value.episode.id }
+        if (restored != null) {
+            _state.value = restored.copy(
+                startPositionMs = session.player.currentPosition.coerceAtLeast(0),
+                message = null,
+            )
+            restored.anime?.let(::loadSimilar)
+        } else {
+            val cached = _state.value.anime
+            if (cached == null) {
+                viewModelScope.launch {
+                    repo.detail(animeId).onSuccess { a ->
+                        _state.update { it.copy(anime = a) }
+                        loadSimilar(a)
+                    }
+                }
+            } else {
+                loadSimilar(cached)
             }
+            play(_state.value.episode)
         }
-        play(_state.value.episode)
     }
 
     fun play(episode: Episode) {
@@ -207,6 +227,16 @@ class PlayerViewModel(
         val nearby = page?.let { repo.episodePage(animeId, it).getOrNull() }?.sortedBy { it.sortKey }.orEmpty()
         if (_state.value.episode.id == episode.id) {
             _state.update { it.copy(next = next, previous = prev, nearby = nearby) }
+        }
+    }
+
+    private fun loadSimilar(anime: Anime) {
+        if (anime.genres.isEmpty()) return
+        similarJob?.cancel()
+        similarJob = viewModelScope.launch {
+            val candidates = repo.similarCandidates(anime).getOrNull().orEmpty()
+            val similar = rankSimilar(anime, candidates, exclude = emptySet())
+            _state.update { if (it.anime?.id == anime.id) it.copy(similar = similar) else it }
         }
     }
 

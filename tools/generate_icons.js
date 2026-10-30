@@ -143,6 +143,71 @@ function resize(src, dw, dh) {
   return { width: dw, height: dh, data: out };
 }
 
+function contentBounds(img, threshold = 12) {
+  const { width, height, data } = img;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const lit = Math.max(data[i], data[i + 1], data[i + 2]) > threshold;
+      if (!lit) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return { x: 0, y: 0, width, height };
+  return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+function crop(img, box) {
+  const { width, data } = img;
+  const out = Buffer.alloc(box.width * box.height * 4);
+  for (let y = 0; y < box.height; y++) {
+    data.copy(
+      out,
+      y * box.width * 4,
+      ((box.y + y) * width + box.x) * 4,
+      ((box.y + y) * width + box.x + box.width) * 4,
+    );
+  }
+  return { width: box.width, height: box.height, data: out };
+}
+
+function blackImage(width, height) {
+  const data = Buffer.alloc(width * height * 4);
+  for (let i = 3; i < data.length; i += 4) data[i] = 255;
+  return { width, height, data };
+}
+
+function blit(dst, src, ox, oy) {
+  for (let y = 0; y < src.height; y++) {
+    src.data.copy(
+      dst.data,
+      ((oy + y) * dst.width + ox) * 4,
+      y * src.width * 4,
+      (y + 1) * src.width * 4,
+    );
+  }
+}
+
+/** Centers the visible artwork at [ratio] of the canvas, so launcher masks never cut its edges. */
+function padContent(img, ratio) {
+  const box = contentBounds(img);
+  const cropped = crop(img, box);
+  const scale = Math.min((img.width * ratio) / cropped.width, (img.height * ratio) / cropped.height);
+  const width = Math.max(1, Math.round(cropped.width * scale));
+  const height = Math.max(1, Math.round(cropped.height * scale));
+  const out = blackImage(img.width, img.height);
+  const art = resize(cropped, width, height);
+  blit(out, art, Math.round((img.width - width) / 2), Math.round((img.height - height) / 2));
+  return out;
+}
+
 function circleMask(img) {
   const { width: w, height: h, data } = img;
   const cx = (w - 1) / 2;
@@ -161,14 +226,16 @@ function circleMask(img) {
 const source = readPng(SOURCE);
 if (source.width !== source.height) throw new Error('Source icon must be square');
 
+// Keep the artwork inside the launcher's safe zone: no edge is cut by circle or squircle masks.
+const padded = padContent(source, 0.7);
 const densities = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
 for (const [density, size] of Object.entries(densities)) {
-  const square = resize(source, size, size);
+  const square = resize(padded, size, size);
   const dir = path.join(RES, `mipmap-${density}`);
   writePng(path.join(dir, 'ic_launcher.png'), size, size, square.data);
-  const round = circleMask(resize(source, size, size));
+  const round = circleMask(resize(padded, size, size));
   writePng(path.join(dir, 'ic_launcher_round.png'), size, size, round.data);
 }
 
-writePng(path.join(RES, 'drawable/ic_launcher_img.png'), source.width, source.height, source.data);
-console.log(`Wrote launcher icons from ${SOURCE} (${source.width}x${source.height})`);
+writePng(path.join(RES, 'drawable/ic_launcher_img.png'), padded.width, padded.height, padded.data);
+console.log(`Wrote launcher icons from ${SOURCE} (${source.width}x${source.height}, artwork 70% safe zone)`);

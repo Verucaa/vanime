@@ -54,6 +54,7 @@ import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
@@ -122,9 +123,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.compose.animation.core.tween
@@ -145,13 +144,14 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarHost
-import androidx.media3.datasource.DefaultDataSource
+import com.vanim.data.Anime
 import com.vanim.data.Episode
 import com.vanim.data.OpMark
 import com.vanim.data.StreamSource
 import com.vanim.data.local.AppSettings
-import com.vanim.data.remote.AnimeApiService
 import com.vanim.ui.components.NetImage
+import com.vanim.ui.components.PosterRow
+import com.vanim.ui.components.SectionHeader
 import com.vanim.ui.components.glass
 import com.vanim.util.formatDuration
 import com.vanim.util.vanimViewModel
@@ -162,28 +162,6 @@ import kotlinx.coroutines.launch
 private const val TAG = "VanimPlayer"
 
 private val Speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
-
-@OptIn(UnstableApi::class)
-private fun buildPlayer(context: Context): ExoPlayer {
-    val client = (context.applicationContext as VanimApp).container.videoHttpClient
-    val http = OkHttpDataSource.Factory(client).setUserAgent(AnimeApiService.USER_AGENT)
-    // DefaultDataSource routes file:// (offline downloads) locally and everything else through OkHttp.
-    val dataSource = DefaultDataSource.Factory(context, http)
-    return ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
-        // Request audio focus: music/podcast from another app pauses instead of overlapping.
-        .setAudioAttributes(
-            androidx.media3.common.AudioAttributes.Builder()
-                .setUsage(C.USAGE_MEDIA)
-                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                .build(),
-            /* handleAudioFocus = */ true,
-        )
-        .setSeekBackIncrementMs(10_000)
-        .setSeekForwardIncrementMs(10_000)
-        .setHandleAudioBecomingNoisy(true)
-        .build()
-}
 
 private fun Context.isMeteredNetwork(): Boolean =
     (getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)?.isActiveNetworkMetered == true
@@ -237,11 +215,15 @@ fun PlayerRoute(
     /** Key of the image (episode thumbnail or detail backdrop) that flies into the video area. */
     sharedKey: String? = null,
     onBack: () -> Unit,
+    onMinimize: () -> Unit,
+    onOpenAnime: (Anime) -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
+    val session = remember { (appContext as VanimApp).container.playbackSession }
     val vm: PlayerViewModel = vanimViewModel { c, h ->
         PlayerViewModel(
             c.animeRepository, c.libraryRepository, c.downloadRepository, c.settingsStore, c.appScope,
+            session = session,
             isMetered = { appContext.isMeteredNetwork() },
             saved = h,
         )
@@ -264,7 +246,12 @@ fun PlayerRoute(
     val inPip = pip?.isInPip?.value == true
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    val player = remember { buildPlayer(context) }
+    val player = session.player
+    LaunchedEffect(Unit) { session.expand() }
+    LaunchedEffect(state) { session.snapshot = state }
+    LaunchedEffect(state.anime, state.episode, state.source) {
+        if (state.source != null) session.updateActive(state.anime, state.episode)
+    }
     val initialEpisodeId = remember { state.episode.id }
     // The nav-arg thumbnail, which is what flew in; the stream may report a different URL for the same image.
     val initialThumbnail = remember { state.episode.thumbnail }
@@ -338,20 +325,31 @@ fun PlayerRoute(
         onDispose {
             vm.saveProgress(player.currentPosition, player.duration)
             player.removeListener(listener)
-            player.release()
             view.keepScreenOn = false
+            if (!session.minimized && activity?.isChangingConfigurations != true) session.stop()
         }
     }
 
     LaunchedEffect(state.source?.url) {
+        val source = state.source ?: run {
+            player.stop()
+            session.clearPrepared()
+            return@LaunchedEffect
+        }
+        if (session.isPrepared(state.episode.id, source.url)) {
+            playback.error = null
+            playback.firstFrame = true
+            playback.buffering = player.playbackState == Player.STATE_BUFFERING
+            playback.ended = player.playbackState == Player.STATE_ENDED
+            playback.isPlaying = player.isPlaying
+            playback.duration = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+            return@LaunchedEffect
+        }
         playback.error = null
         playback.ended = false
         playback.pendingSeek = null
         playback.firstFrame = false
-        val source = state.source ?: run {
-            player.stop()
-            return@LaunchedEffect
-        }
+        session.markPrepared(state.episode.id, source.url)
         player.setMediaItem(MediaItem.fromUri(source.url), state.startPositionMs.coerceAtLeast(0))
         player.prepare()
         player.playWhenReady = !sleepExpired
@@ -449,6 +447,7 @@ fun PlayerRoute(
             fullscreen = fullscreen,
             inPip = inPip,
             onBack = { if (fullscreen) setFullscreen(false) else onBack() },
+            onMinimize = onMinimize,
             onToggleFullscreen = { setFullscreen(!fullscreen) },
             onOpenSettings = { showSettings = true },
             onEnterPip = { pip?.enter() },
@@ -484,6 +483,7 @@ fun PlayerRoute(
                     onPrevious = vm::playPrevious,
                     onDownload = vm::downloadCurrent,
                     onDeleteDownload = vm::deleteDownload,
+                    onAnimeClick = onOpenAnime,
                 )
             }
         }
@@ -551,6 +551,7 @@ private fun VideoSurface(
     inPip: Boolean,
     pipSupported: Boolean,
     onBack: () -> Unit,
+    onMinimize: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onOpenSettings: () -> Unit,
     onEnterPip: () -> Unit,
@@ -748,6 +749,7 @@ private fun VideoSurface(
                     controlsVisible = false
                 },
                 onBack = onBack,
+                onMinimize = onMinimize,
                 onToggleFullscreen = onToggleFullscreen,
                 onOpenSettings = onOpenSettings,
                 onEnterPip = onEnterPip,
@@ -805,8 +807,12 @@ private fun VideoSurface(
             EndOverlay(
                 next = state.next,
                 autoPlay = autoPlayAllowed(settings.autoPlayNext, sleep, sleepExpired),
-                onNext = onNext,
+                onNext = {
+                    playback.ended = false
+                    onNext()
+                },
                 onReplay = {
+                    playback.ended = false
                     player.seekTo(0)
                     player.play()
                 },
@@ -838,6 +844,7 @@ private fun Controls(
     pipSupported: Boolean,
     onLock: () -> Unit,
     onBack: () -> Unit,
+    onMinimize: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onOpenSettings: () -> Unit,
     onEnterPip: () -> Unit,
@@ -881,6 +888,14 @@ private fun Controls(
             }
             if (fullscreen) {
                 IconButton(onClick = onLock) { Icon(Icons.Rounded.Lock, "Kunci layar", tint = Color.White) }
+            } else {
+                IconButton(onClick = onMinimize, enabled = state.source != null) {
+                    Icon(
+                        Icons.Rounded.KeyboardArrowDown,
+                        "Perkecil",
+                        tint = if (state.source != null) Color.White else Color.White.copy(alpha = 0.3f),
+                    )
+                }
             }
             if (pipSupported) {
                 IconButton(onClick = onEnterPip) { Icon(Icons.Rounded.PictureInPictureAlt, "Picture-in-Picture", tint = Color.White) }
@@ -920,21 +935,29 @@ private fun Controls(
             TransportButton(Icons.Rounded.SkipNext, "Episode berikutnya", enabled = state.next != null, onClick = { onNext(); onInteract() })
         }
 
-        // Bottom: time + seek bar
+        // Bottom: a thin seek bar with only the elapsed and total time.
         Column(
             Modifier.fillMaxWidth()
-                .glass(RoundedCornerShape(20.dp), alpha = 0.3f)
                 .align(Alignment.BottomCenter)
-                .then(if (fullscreen) Modifier.padding(horizontal = 32.dp, vertical = 12.dp) else Modifier.padding(horizontal = 12.dp)),
+                .then(
+                    if (fullscreen) Modifier.padding(horizontal = 32.dp, vertical = 12.dp)
+                    else Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                ),
         ) {
             val duration = playback.duration.coerceAtLeast(1)
+            val shown = scrubbing?.let { (it * duration).toLong() } ?: playback.position
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val shown = scrubbing?.let { (it * duration).toLong() } ?: playback.position
                 Text(
-                    "${formatDuration(shown)} / ${formatDuration(playback.duration)}",
+                    formatDuration(shown),
                     color = Color.White,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.weight(1f).padding(start = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    formatDuration(playback.duration),
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall,
                 )
                 IconButton(onClick = onToggleFullscreen) {
                     Icon(
@@ -944,33 +967,23 @@ private fun Controls(
                     )
                 }
             }
-            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                LinearProgressIndicator(
-                    progress = { playback.buffered.toFloat() / duration },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(3.dp).clip(CircleShape),
-                    color = Color.White.copy(alpha = 0.35f),
-                    trackColor = Color.White.copy(alpha = 0.15f),
-                    drawStopIndicator = {},
-                    gapSize = 0.dp,
-                )
-                Slider(
-                    value = scrubbing ?: (playback.position.toFloat() / duration).coerceIn(0f, 1f),
-                    onValueChange = {
-                        scrubbing = it
-                        onInteract()
-                    },
-                    onValueChangeFinished = {
-                        scrubbing?.let { player.seekSafely((it * duration).toLong(), playback) }
-                        scrubbing = null
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color.Transparent,
-                    ),
-                    modifier = Modifier.fillMaxWidth().height(24.dp),
-                )
-            }
+            Slider(
+                value = scrubbing ?: (playback.position.toFloat() / duration).coerceIn(0f, 1f),
+                onValueChange = {
+                    scrubbing = it
+                    onInteract()
+                },
+                onValueChangeFinished = {
+                    scrubbing?.let { player.seekSafely((it * duration).toLong(), playback) }
+                    scrubbing = null
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                ),
+                modifier = Modifier.fillMaxWidth().height(20.dp),
+            )
         }
     }
 }
@@ -1042,18 +1055,11 @@ private fun LevelIndicator(icon: ImageVector, level: Float, modifier: Modifier) 
 
 @Composable
 private fun EndOverlay(next: Episode?, autoPlay: Boolean, onNext: () -> Unit, onReplay: () -> Unit) {
-    var remaining by remember(next?.id) { mutableIntStateOf(if (autoPlay && next != null) 6 else -1) }
     LaunchedEffect(next?.id, autoPlay) {
-        if (!autoPlay || next == null) {
-            // Autoplay can be switched off mid-countdown (sleep timer); drop the frozen count.
-            remaining = -1
-            return@LaunchedEffect
+        if (autoPlay && next != null) {
+            delay(3_000)
+            onNext()
         }
-        while (remaining > 0) {
-            delay(1_000)
-            remaining--
-        }
-        if (remaining == 0) onNext()
     }
     Column(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)).padding(24.dp),
@@ -1063,16 +1069,19 @@ private fun EndOverlay(next: Episode?, autoPlay: Boolean, onNext: () -> Unit, on
         if (next != null) {
             Text("Selanjutnya", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
             Text("Episode ${next.number}", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            if (autoPlay) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Memutar otomatis dalam 3 detik",
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (remaining > 0) {
-                    OutlinedButton(onClick = { remaining = -1 }) { Text("Batal", color = Color.White) }
-                }
-                Button(onClick = onNext) {
-                    Icon(Icons.Rounded.PlayArrow, null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (remaining > 0) "Putar ($remaining)" else "Putar sekarang")
-                }
+            Button(onClick = onNext) {
+                Icon(Icons.Rounded.PlayArrow, null)
+                Spacer(Modifier.width(4.dp))
+                Text("Putar sekarang")
             }
         } else {
             Text("Kamu sudah di episode terbaru", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -1095,6 +1104,7 @@ private fun EpisodeInfo(
     onPrevious: () -> Unit,
     onDownload: (StreamSource) -> Unit,
     onDeleteDownload: () -> Unit,
+    onAnimeClick: (Anime) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 24.dp),
@@ -1197,6 +1207,20 @@ private fun EpisodeInfo(
                             )
                         }
                     }
+                }
+            }
+        }
+        if (state.similar.isNotEmpty()) {
+            item {
+                Column(Modifier.padding(top = 24.dp)) {
+                    SectionHeader("Anime Serupa")
+                    Spacer(Modifier.height(12.dp))
+                    PosterRow(
+                        items = state.similar,
+                        loading = false,
+                        onClick = onAnimeClick,
+                        origin = "similar-player-${state.episode.id}",
+                    )
                 }
             }
         }

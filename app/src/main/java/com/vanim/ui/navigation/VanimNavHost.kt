@@ -14,6 +14,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +54,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.core.LinearEasing
@@ -75,6 +77,7 @@ import com.vanim.ui.detail.DetailRoute
 import com.vanim.ui.explore.ExploreRoute
 import com.vanim.ui.home.HomeRoute
 import com.vanim.ui.library.LibraryRoute
+import com.vanim.ui.player.MiniPlayer
 import com.vanim.ui.player.PlayerRoute
 import com.vanim.ui.schedule.ScheduleRoute
 import com.vanim.ui.settings.SettingsRoute
@@ -171,7 +174,12 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
         }
     }
 
-    val animeRepository = (LocalContext.current.applicationContext as VanimApp).container.animeRepository
+    val app = LocalContext.current.applicationContext as VanimApp
+    val animeRepository = app.container.animeRepository
+    val session = app.container.playbackSession
+    val mini by session.active.collectAsStateWithLifecycle()
+    val miniPlaying by session.playing.collectAsStateWithLifecycle()
+    val miniVisible = session.minimized && mini != null && destination?.route != Routes.PLAYER
     val openAnime: (Anime, String) -> Unit = { anime, from ->
         // The detail header needs the poster on its first frame to be the shared poster's landing spot.
         animeRepository.prime(anime)
@@ -192,33 +200,67 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         bottomBar = {
-            AnimatedVisibility(
-                visible = currentTab != null,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it },
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .glass(RoundedCornerShape(24.dp), alpha = 0.82f),
+            Column {
+                AnimatedVisibility(
+                    visible = miniVisible,
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut(),
                 ) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0),
-                    ) {
-                        Tab.entries.forEach { tab ->
-                            val selected = tab == currentTab
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    if (tab == Tab.EXPLORE) nav.navigateTab(Routes.explore()) else nav.navigateTab(tab.route)
+                    val active = mini
+                    if (active != null) {
+                        Box(
+                            Modifier.then(
+                                if (currentTab == null) Modifier.navigationBarsPadding() else Modifier,
+                            ),
+                        ) {
+                            MiniPlayer(
+                                session = session,
+                                active = active,
+                                playing = miniPlaying,
+                                onExpand = {
+                                    session.expand()
+                                    nav.navigate(
+                                        Routes.player(
+                                            active.animeId,
+                                            active.episodeId,
+                                            active.episodeNumber,
+                                            active.thumbnail,
+                                        ),
+                                    ) { launchSingleTop = true }
                                 },
-                                icon = { Icon(if (selected) tab.selectedIcon else tab.icon, null) },
-                                label = { Text(tab.label) },
+                                onClose = session::stop,
                             )
+                        }
+                    }
+                }
+                AnimatedVisibility(
+                    visible = currentTab != null,
+                    enter = slideInVertically { it },
+                    exit = slideOutVertically { it },
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .glass(RoundedCornerShape(24.dp), alpha = 0.82f),
+                    ) {
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            windowInsets = WindowInsets(0),
+                        ) {
+                            Tab.entries.forEach { tab ->
+                                val selected = tab == currentTab
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick = {
+                                        if (tab == Tab.EXPLORE) nav.navigateTab(Routes.explore()) else nav.navigateTab(tab.route)
+                                    },
+                                    icon = { Icon(if (selected) tab.selectedIcon else tab.icon, null) },
+                                    label = { Text(tab.label) },
+                                )
+                            }
                         }
                     }
                 }
@@ -318,6 +360,15 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                                 PlayerRoute(
                                     sharedKey = entry.arguments?.getString("shared")?.takeIf { it.isNotBlank() },
                                     onBack = { nav.popBackStack() },
+                                    onMinimize = {
+                                        session.minimize()
+                                        nav.popBackStack()
+                                    },
+                                    onOpenAnime = { anime ->
+                                        session.minimize()
+                                        nav.popBackStack()
+                                        openAnime(anime, "similar-player")
+                                    },
                                 )
                             }
                         }

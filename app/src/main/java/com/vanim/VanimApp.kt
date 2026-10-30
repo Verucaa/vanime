@@ -13,6 +13,7 @@ import com.vanim.data.local.SettingsStore
 import com.vanim.data.remote.AnimeApiService
 import com.vanim.data.UpdateRepository
 import com.vanim.data.notify.EpisodeNotifyWorker
+import com.vanim.ui.player.PlaybackSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,9 @@ class AppContainer(app: Application) {
 
     /** Video requests get the same UA as the API but none of its JSON headers. */
     val videoHttpClient: OkHttpClient = httpClient.newBuilder().apply { interceptors().clear() }.build()
+
+    /** One player for the process; the full player and the mini player both bind to it. */
+    val playbackSession = PlaybackSession(app, videoHttpClient, animeRepository, settingsStore, appScope)
 }
 
 class VanimApp : Application(), ImageLoaderFactory {
