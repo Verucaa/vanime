@@ -1,3 +1,4 @@
+
 package com.vanim.ui.player
 
 import android.graphics.Color as AndroidColor
@@ -65,7 +66,6 @@ fun MiniPlayer(
                     PlayerView(context).apply {
                         useController = false
                         setShutterBackgroundColor(AndroidColor.BLACK)
-                        setUseTextureView(true)
                         player = session.player
                     }
                 },
@@ -73,7 +73,9 @@ fun MiniPlayer(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+
         Spacer(Modifier.width(10.dp))
+
         Column(Modifier.weight(1f)) {
             Text(
                 active.title,
@@ -81,6 +83,7 @@ fun MiniPlayer(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+
             Text(
                 "Episode ${active.episodeNumber}",
                 style = MaterialTheme.typography.labelSmall,
@@ -88,9 +91,14 @@ fun MiniPlayer(
                 maxLines = 1,
             )
         }
+
         IconButton(onClick = session::toggle) {
-            Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Jeda" else "Putar")
+            Icon(
+                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                if (playing) "Jeda" else "Putar",
+            )
         }
+
         IconButton(onClick = onClose) {
             Icon(Icons.Rounded.Close, "Tutup")
         }
