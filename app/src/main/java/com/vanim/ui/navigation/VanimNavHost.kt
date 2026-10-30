@@ -359,7 +359,10 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                             Scoped {
                                 PlayerRoute(
                                     sharedKey = entry.arguments?.getString("shared")?.takeIf { it.isNotBlank() },
-                                    onBack = { nav.popBackStack() },
+                                    onBack = {
+                                        session.minimize()
+                                        nav.popBackStack()
+                                    },
                                     onMinimize = {
                                         session.minimize()
                                         nav.popBackStack()

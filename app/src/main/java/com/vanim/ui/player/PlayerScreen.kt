@@ -424,6 +424,7 @@ fun PlayerRoute(
             if (enable) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
     BackHandler(enabled = fullscreen) { setFullscreen(false) }
+    BackHandler(enabled = !fullscreen) { onMinimize() }
 
     // --- Layout ---------------------------------------------------------------------------
     var showSettings by remember { mutableStateOf(false) }
