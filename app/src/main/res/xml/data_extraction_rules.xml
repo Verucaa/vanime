@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Backup and device-to-device transfer for API 31+. Downloaded episodes (external files) are left out:
+   they exceed the cloud quota and can be downloaded again. Everything else uses the defaults.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

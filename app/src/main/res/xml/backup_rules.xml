@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Auto Backup for API 30 and below. Downloaded episodes live in external files (getExternalFilesDir);
+   they would blow the 25 MB quota, and an over-quota app gets no cloud backup at all.
+   History, favourites (Room) and settings (DataStore) are still backed up.
+-->
+<full-backup-content>
+    <exclude domain="external" path="." />
+</full-backup-content>

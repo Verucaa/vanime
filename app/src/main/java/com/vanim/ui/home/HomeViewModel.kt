@@ -1,0 +1,138 @@
+package com.vanim.ui.home
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.vanim.data.Anime
+import com.vanim.data.AnimeRepository
+import com.vanim.data.LatestRelease
+import com.vanim.data.LibraryRepository
+import com.vanim.data.UpdateRepository
+import com.vanim.data.local.SettingsStore
+import com.vanim.data.remote.NetworkStatus
+import com.vanim.data.local.WatchHistoryEntity
+import com.vanim.util.Day
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+data class HomeFeed(
+    val popular: List<Anime> = emptyList(),
+    val today: List<Anime> = emptyList(),
+    val thisSeason: List<Anime> = emptyList(),
+    /** Titles with a freshly released episode, newest first. */
+    val latest: List<LatestRelease> = emptyList(),
+    val loading: Boolean = true,
+    /** Pull-to-refresh in progress (its own indicator). */
+    val refreshing: Boolean = false,
+    /** Quiet background refresh while data is already on screen (the top-bar hairline). */
+    val syncing: Boolean = false,
+    /** What is on screen came from the disk cache, not yet confirmed by the network. */
+    val stale: Boolean = false,
+    val error: String? = null,
+) {
+    val hasData: Boolean get() = popular.isNotEmpty() || thisSeason.isNotEmpty() || latest.isNotEmpty()
+}
+
+data class HomeUiState(
+    val feed: HomeFeed = HomeFeed(),
+    val continueWatching: List<WatchHistoryEntity> = emptyList(),
+) {
+    /** Most-watched titles airing this season; all-time popular only if the schedule is unavailable. */
+    val hero: List<Anime> get() = feed.thisSeason.ifEmpty { feed.popular }
+        .filter { it.poster.isNotBlank() }
+        .sortedByDescending { it.views }
+        .take(8)
+}
+
+class HomeViewModel(
+    private val anime: AnimeRepository,
+    private val library: LibraryRepository,
+    private val updateRepository: UpdateRepository,
+    private val settingsStore: SettingsStore,
+    private val networkStatus: NetworkStatus,
+) : ViewModel() {
+
+    private val feed = MutableStateFlow(HomeFeed())
+
+    /** Non-null when a newer GitHub release exists (checked at most once every 6 hours). */
+    private val _update = MutableStateFlow<UpdateRepository.UpdateInfo?>(null)
+    val update: StateFlow<UpdateRepository.UpdateInfo?> = _update.asStateFlow()
+
+    val favoriteIds: StateFlow<Set<String>> = library.favoriteList
+        .map { list -> list.mapTo(HashSet()) { it.animeId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun toggleFavorite(anime: Anime) {
+        viewModelScope.launch { library.setFavorite(anime, anime.id !in favoriteIds.value) }
+    }
+
+    /** Hides the update banner until the next release. */
+    fun dismissUpdate() {
+        _update.value?.let { info ->
+            viewModelScope.launch { settingsStore.dismissUpdate(info.tag) }
+        }
+        _update.value = null
+    }
+
+    val state: StateFlow<HomeUiState> = combine(feed, library.continueWatching(15)) { f, cw ->
+        HomeUiState(f, cw)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+
+    val today: Day = Day.today()
+
+    private val loader = HomeFeedLoader(anime, today)
+
+    init {
+        viewModelScope.launch {
+            // Last saved feed first, so Beranda draws at once; the network load below replaces it.
+            val cached = loader.fetch(cacheOnly = true)
+            feed.value.reduce(cached, fromCache = true, online = online())?.let { feed.value = it }
+        }
+        load(refreshing = false)
+        viewModelScope.launch { _update.value = updateRepository.check() }
+        viewModelScope.launch {
+            networkStatus.state.map { it.online }.distinctUntilChanged().drop(1).filter { it }.collect {
+                if (shouldAutoRefresh(feed.value)) load(refreshing = false)
+            }
+        }
+    }
+
+    fun refresh() = load(refreshing = true)
+
+    private fun online() = networkStatus.state.value.online
+
+    private fun load(refreshing: Boolean) {
+        feed.update {
+            it.copy(loading = !refreshing && !it.hasData, refreshing = refreshing, syncing = !refreshing && it.hasData, error = null)
+        }
+        viewModelScope.launch {
+            // The network is often not ready at cold start; retry quietly before showing an error.
+            repeat(AUTO_RETRIES) { attempt ->
+                val hitsBefore = networkStatus.cacheHits
+                val result = loader.fetch(cacheOnly = false)
+                val servedFromCache = networkStatus.cacheHits != hitsBefore
+                val last = attempt == AUTO_RETRIES - 1
+                if (result.error == null || last) {
+                    feed.value.reduce(result, fromCache = false, online = online(), servedFromCache)?.let { feed.value = it }
+                    // Cached answer while the network looks up (not ready yet at cold start): keep retrying for fresh data.
+                    if (!servedFromCache || last || !online()) return@launch
+                }
+                delay(2_000L * (attempt + 1))
+            }
+        }
+    }
+
+    private companion object {
+        const val AUTO_RETRIES = 3
+    }
+}

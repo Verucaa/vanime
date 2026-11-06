@@ -1,0 +1,621 @@
+package com.vanim.ui.home
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdateAlt
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.vanim.ui.theme.PlusJakarta
+import com.vanim.ui.components.ImageScrim
+import com.vanim.ui.components.TagChip
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import com.vanim.ui.motion.Motion
+import com.vanim.ui.motion.sharedPosterKey
+import com.vanim.ui.motion.sharedKey
+import com.vanim.ui.motion.pressScale
+import com.vanim.ui.motion.OpenAnime
+import com.vanim.data.Anime
+import com.vanim.data.UpdateRepository
+import com.vanim.data.local.WatchHistoryEntity
+import com.vanim.ui.components.ContinueWatchingCard
+import com.vanim.ui.components.ErrorState
+import com.vanim.ui.components.NetImage
+import com.vanim.ui.components.RefreshHairline
+import com.vanim.ui.components.PosterRow
+import com.vanim.ui.components.SectionHeader
+import com.vanim.ui.components.SkeletonBox
+import com.vanim.util.airTime
+import com.vanim.util.compactNumber
+import com.vanim.util.relativeTime
+import com.vanim.util.fuwaViewModel
+import kotlinx.coroutines.delay
+
+val QuickGenres = listOf(
+    "Action", "Fantasy", "Romance", "Comedy", "Isekai", "Slice of Life",
+    "School", "Drama", "Supernatural", "Sci-Fi", "Mystery", "Sports",
+)
+
+@Composable
+fun HomeRoute(
+    onAnimeClick: OpenAnime,
+    onContinue: (WatchHistoryEntity) -> Unit,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    onSchedule: () -> Unit,
+    onExplore: (genre: String?) -> Unit,
+) {
+    val vm: HomeViewModel = fuwaViewModel { c, _ ->
+        HomeViewModel(c.animeRepository, c.libraryRepository, c.updateRepository, c.settingsStore, c.networkStatus)
+    }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val update by vm.update.collectAsStateWithLifecycle()
+    val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
+    HomeScreen(
+        state = state,
+        favoriteIds = favoriteIds,
+        onToggleFavorite = vm::toggleFavorite,
+        todayLabel = vm.today.label,
+        onRefresh = vm::refresh,
+        update = update,
+        onDismissUpdate = vm::dismissUpdate,
+        onAnimeClick = onAnimeClick,
+        onContinue = onContinue,
+        onSearch = onSearch,
+        onSettings = onSettings,
+        onSchedule = onSchedule,
+        onExplore = onExplore,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun HomeScreen(
+    state: HomeUiState,
+    favoriteIds: Set<String>,
+    onToggleFavorite: (Anime) -> Unit,
+    todayLabel: String,
+    onRefresh: () -> Unit,
+    update: UpdateRepository.UpdateInfo?,
+    onDismissUpdate: () -> Unit,
+    onAnimeClick: OpenAnime,
+    onContinue: (WatchHistoryEntity) -> Unit,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    onSchedule: () -> Unit,
+    onExplore: (String?) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val feed = state.feed
+    var showUpdateSheet by remember { mutableStateOf(false) }
+
+    PullToRefreshBox(isRefreshing = feed.refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), modifier = Modifier.fillMaxSize()) {
+            item(key = "hero") {
+                val heroLoading = feed.loading && state.hero.isEmpty()
+                Crossfade(heroLoading, animationSpec = tween(Motion.Medium), label = "hero") { loading ->
+                    if (loading) {
+                        SkeletonBox(Modifier.fillMaxWidth().height(HeroHeight), shape = MaterialTheme.shapes.extraSmall)
+                    } else if (state.hero.isNotEmpty()) {
+                        HeroPager(state.hero, favoriteIds, onToggleFavorite) { onAnimeClick(it, "home-hero") }
+                    } else {
+                        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars).height(72.dp))
+                    }
+                }
+            }
+
+            // Below the hero, not under the status bar where the edge-to-edge hero starts.
+            if (update != null) {
+                item(key = "updateBanner") {
+                    UpdateBanner(update, onClick = { showUpdateSheet = true }, onDismiss = onDismissUpdate)
+                }
+            }
+
+            if (feed.error != null && feed.popular.isEmpty()) {
+                item { ErrorState(feed.error, onRefresh) }
+            }
+
+            if (state.continueWatching.isNotEmpty()) {
+                item(key = "cw") {
+                    Section("Lanjutkan Nonton") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(state.continueWatching, key = { it.episodeId }) { entry ->
+                                ContinueWatchingCard(entry, onClick = { onContinue(entry) }, sharedOrigin = "home-cw")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (feed.loading || feed.latest.isNotEmpty()) {
+                item(key = "latest") {
+                    Section("Episode Terbaru") {
+                        val releases = remember(feed.latest) { feed.latest.associateBy { it.anime.id } }
+                        PosterRow(feed.latest.map { it.anime }, feed.loading, { onAnimeClick(it, "home-latest") }, origin = "home-latest", isNew = { true }, caption = { a ->
+                            releases[a.id]?.let { r ->
+                                listOf(r.episodeLabel.trim(), relativeTime(r.updatedAt))
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" · ")
+                                    .ifBlank { null }
+                            }
+                        })
+                    }
+                }
+            }
+
+            if (feed.loading || feed.today.isNotEmpty()) {
+                item(key = "today") {
+                    Section("Tayang Hari Ini", subtitle = todayLabel, onSeeAll = onSchedule) {
+                        PosterRow(feed.today, feed.loading, { onAnimeClick(it, "home-today") }, origin = "home-today", caption = { a ->
+                            a.nextAirTime.takeIf { it.isNotBlank() }?.let { "Rilis ${airTime(it)}" }
+                        })
+                    }
+                }
+            }
+
+            if (feed.loading || feed.thisSeason.isNotEmpty()) {
+                item(key = "season") {
+                    Section("Sedang Tayang", subtitle = "Anime ongoing musim ini") {
+                        PosterRow(
+                            feed.thisSeason, feed.loading, { onAnimeClick(it, "home-season") },
+                            origin = "home-season", caption = { "${compactNumber(it.views)} ditonton" },
+                        )
+                    }
+                }
+            }
+
+            item(key = "popular") {
+                Section("Terpopuler", subtitle = "Paling banyak ditonton", onSeeAll = { onExplore(null) }) {
+                    val top = feed.popular.take(10)
+                    if (top.isEmpty()) {
+                        PosterRow(top, feed.loading, { onAnimeClick(it, "home-popular") })
+                    } else {
+                        RankedRow(top, { onAnimeClick(it, "home-popular") }, origin = "home-popular")
+                    }
+                }
+            }
+
+            item(key = "genres") {
+                Section("Jelajahi Genre") {
+                    FlowRow(
+                        Modifier.padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        QuickGenres.forEach { g -> TagChip(g, onClick = { onExplore(g) }) }
+                    }
+                }
+            }
+        }
+
+        HomeTopBar(
+            solid = remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 600 } }.value,
+            syncing = feed.syncing,
+            onSearch = onSearch,
+            onSettings = onSettings,
+        )
+    }
+
+    if (showUpdateSheet && update != null) {
+        UpdateSheet(update, onDismiss = { showUpdateSheet = false })
+    }
+}
+
+@Composable
+private fun UpdateBanner(info: UpdateRepository.UpdateInfo, onClick: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+        modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.SystemUpdateAlt,
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                "Update ${info.tag.removePrefix("v")} tersedia — ketuk untuk lihat perubahan",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f).padding(horizontal = 10.dp).clickable(onClick = onClick),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.Close,
+                    "Tutup banner update",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UpdateSheet(info: UpdateRepository.UpdateInfo, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SystemUpdateAlt, null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    info.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 10.dp),
+                )
+            }
+            Text(
+                info.tag.removePrefix("v"),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                info.notes.ifBlank { "Tanpa catatan rilis." },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 20.dp)) {
+                Button(
+                    onClick = {
+                        info.apkUrl?.let { url ->
+                            context.startActivity(
+                                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)),
+                            )
+                        }
+                    },
+                    enabled = info.apkUrl != null,
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                ) {
+                    Icon(Icons.Rounded.Info, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Unduh APK")
+                }
+                OutlinedIconButton(
+                    onClick = {
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(info.pageUrl)),
+                        )
+                    },
+                ) {
+                    Icon(Icons.Rounded.OpenInNew, "Buka di GitHub")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Section(
+    title: String,
+    subtitle: String? = null,
+    onSeeAll: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    Column(Modifier.padding(top = 24.dp)) {
+        SectionHeader(title, subtitle = subtitle, onSeeAll = onSeeAll)
+        Spacer(Modifier.height(12.dp))
+        content()
+    }
+}
+
+@Composable
+private fun HomeTopBar(solid: Boolean, syncing: Boolean, onSearch: () -> Unit, onSettings: () -> Unit) {
+    val bg by animateColorAsState(
+        if (solid) MaterialTheme.colorScheme.surface.copy(alpha = 0.96f) else Color.Transparent,
+        label = "topbarBg",
+    )
+    val scrim = Brush.verticalGradient(listOf(Color.Black.copy(alpha = if (solid) 0f else 0.55f), Color.Transparent))
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(bg)
+                .background(scrim)
+                .statusBarsPadding()
+                .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Wordmark(onDark = !solid)
+            Spacer(Modifier.weight(1f))
+            val tint = if (solid) MaterialTheme.colorScheme.onSurface else Color.White
+            IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, "Cari", tint = tint) }
+            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Pengaturan", tint = tint) }
+        }
+        RefreshHairline(syncing)
+    }
+}
+
+@Composable
+fun Wordmark(onDark: Boolean = false) {
+    val style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, letterSpacing = (-0.03).em)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("VA", style = style, color = MaterialTheme.colorScheme.primary)
+        Text("NIM", style = style, color = if (onDark) Color.White else MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+private val HeroHeight = 500.dp
+/** The hero uses the source artwork as a cinematic wash, with a compact poster and direct actions. */
+@Composable
+private fun AmbientBackdrop(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    AsyncImage(
+        model = remember(url) { ImageRequest.Builder(context).data(url).size(64).memoryCacheKey("$url#ambient").crossfade(250).build() },
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh).blur(36.dp, BlurredEdgeTreatment.Rectangle),
+    )
+}
+
+@Composable
+private fun HeroPager(items: List<Anime>, favoriteIds: Set<String>, onToggleFavorite: (Anime) -> Unit, onOpen: (Anime) -> Unit) {
+    val pager = rememberPagerState { items.size }
+    LaunchedEffect(pager, items.size) {
+        while (items.size > 1) {
+            delay(6_000)
+            if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % items.size)
+        }
+    }
+    val background = MaterialTheme.colorScheme.background
+    Box {
+        HorizontalPager(pager, Modifier.fillMaxWidth().height(HeroHeight)) { page ->
+            val anime = items[page]
+            Box(Modifier.fillMaxSize()) {
+                val press = remember { MutableInteractionSource() }
+                AmbientBackdrop(anime.poster, Modifier.fillMaxSize())
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color(0xFF07111B).copy(alpha = 0.2f),
+                            0.32f to Color(0xFF07111B).copy(alpha = 0.42f),
+                            0.65f to background.copy(alpha = 0.82f),
+                            1f to background,
+                        ),
+                    ),
+                )
+                Column(
+                    Modifier.fillMaxSize().statusBarsPadding().padding(top = 70.dp, start = 20.dp, end = 20.dp, bottom = 42.dp),
+                    verticalArrangement = Arrangement.Bottom,
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        NetImage(
+                            anime.poster,
+                            Modifier
+                                .width(112.dp)
+                                .aspectRatio(2f / 3f)
+                                .pressScale(press)
+                                .sharedKey(sharedPosterKey(anime.id, "home-hero"))
+                                .shadow(22.dp, RoundedCornerShape(20.dp))
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable(interactionSource = press, indication = null) { onOpen(anime) },
+                            anime.title,
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.17f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                            ) {
+                                Text(
+                                    "PILIHAN VANIM  ·  #${page + 1}",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.045.em,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                )
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                anime.title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val meta = listOf(anime.type, anime.displayYear, "${compactNumber(anime.views)} ditonton")
+                                .filter { it.isNotBlank() }.joinToString("  ·  ")
+                            if (meta.isNotBlank()) {
+                                Spacer(Modifier.height(7.dp))
+                                Text(
+                                    meta,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Spacer(Modifier.height(14.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { onOpen(anime) },
+                                    modifier = Modifier.weight(1f).height(46.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                ) {
+                                    Icon(Icons.Rounded.PlayArrow, null)
+                                    Spacer(Modifier.width(5.dp))
+                                    Text("Tonton", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                val favorite = anime.id in favoriteIds
+                                OutlinedIconButton(
+                                    onClick = { onToggleFavorite(anime) },
+                                    modifier = Modifier.size(46.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                                ) {
+                                    Icon(
+                                        if (favorite) Icons.Rounded.Check else Icons.Rounded.Add,
+                                        if (favorite) "Hapus dari Koleksi" else "Tambah ke Koleksi",
+                                        tint = if (favorite) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            repeat(items.size) { i ->
+                val selected = pager.currentPage == i
+                val w by animateDpAsState(if (selected) 22.dp else 6.dp, label = "hero-page")
+                Box(
+                    Modifier
+                        .height(5.dp)
+                        .width(w)
+                        .clip(CircleShape)
+                        .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.32f)),
+                )
+            }
+        }
+    }
+}
+/** Top-10 row: big outlined rank numbers peeking out from behind each poster. */
+@Composable
+private fun RankedRow(items: List<Anime>, onClick: (Anime) -> Unit, origin: String) {
+    val strokePx = with(LocalDensity.current) { 2.dp.toPx() }
+    LazyRow(
+        contentPadding = PaddingValues(start = 8.dp, end = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        itemsIndexed(items, key = { _, a -> a.id }) { index, anime ->
+            Box(Modifier.width(158.dp).height(160.dp)) {
+                Text(
+                    "${index + 1}",
+                    style = TextStyle(
+                        fontFamily = PlusJakarta,
+                        fontSize = 120.sp,
+                        lineHeight = 120.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.06).em,
+                        drawStyle = Stroke(width = strokePx),
+                    ),
+                    color = RankStroke,
+                    modifier = Modifier.align(Alignment.BottomStart).offset(y = 14.dp),
+                )
+                val press = remember { MutableInteractionSource() }
+                NetImage(
+                    anime.poster,
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .width(106.dp)
+                        .height(152.dp)
+                        .pressScale(press)
+                        .sharedKey(sharedPosterKey(anime.id, origin))
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(interactionSource = press, indication = LocalIndication.current) { onClick(anime) },
+                    anime.title,
+                )
+            }
+        }
+    }
+}
+
+private val RankStroke = Color(0xFF4A4455)
