@@ -72,6 +72,7 @@ import com.vanim.data.LibraryRepository
 import com.vanim.data.local.AppSettings
 import com.vanim.data.local.SettingsStore
 import com.vanim.data.local.ThemeMode
+import com.vanim.ui.theme.brandStyledText
 import com.vanim.util.fuwaViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -324,7 +325,7 @@ private fun SwitchRow(icon: ImageVector, title: String, subtitle: String?, check
 @Composable
 private fun ActionRow(icon: ImageVector, title: String, subtitle: String?, onClick: (() -> Unit)?) {
     ListItem(
-        headlineContent = { Text(title) },
+        headlineContent = { Text(brandStyledText(title)) },
         supportingContent = if (subtitle != null) {
             { Text(subtitle) }
         } else null,

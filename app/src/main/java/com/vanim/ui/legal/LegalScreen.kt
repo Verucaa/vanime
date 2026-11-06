@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import com.vanim.BuildConfig
+import com.vanim.ui.theme.brandStyledText
 
 /**
  * Legal copy shown inside the app. Mirrors docs/legal/privacy.md and docs/legal/terms.md in the
@@ -189,7 +190,7 @@ fun LegalRoute(type: String, onBack: () -> Unit) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
-                title = { Text(title) },
+                title = { Text(brandStyledText(title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali") }
                 },
@@ -209,7 +210,7 @@ fun LegalRoute(type: String, onBack: () -> Unit) {
         ) {
             item {
                 Text(
-                    body,
+                    brandStyledText(body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.fillMaxWidth(),

@@ -235,6 +235,7 @@ private fun ExoPlayer.effectivePosition(playback: PlaybackState): Long = playbac
 fun PlayerRoute(
     /** Key of the image (episode thumbnail or detail backdrop) that flies into the video area. */
     sharedKey: String? = null,
+    onMiniPlayer: (MiniPlayerItem) -> Unit,
     onBack: () -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
@@ -267,6 +268,19 @@ fun PlayerRoute(
     val initialEpisodeId = remember { state.episode.id }
     // The nav-arg thumbnail, which is what flew in; the stream may report a different URL for the same image.
     val initialThumbnail = remember { state.episode.thumbnail }
+    LaunchedEffect(state.anime?.id, state.episode.id) {
+        state.anime?.let { anime ->
+            onMiniPlayer(
+                MiniPlayerItem(
+                    animeId = anime.id,
+                    episodeId = state.episode.id,
+                    episodeNumber = state.episode.number,
+                    title = anime.title,
+                    thumbnail = state.episode.thumbnail.ifBlank { initialThumbnail },
+                ),
+            )
+        }
+    }
     val playback = remember { PlaybackState() }
     var speed by remember { mutableFloatStateOf(1f) }
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
@@ -942,14 +956,6 @@ private fun Controls(
                 }
             }
             Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
-                LinearProgressIndicator(
-                    progress = { playback.buffered.toFloat() / duration },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(3.dp).clip(CircleShape),
-                    color = Color.White.copy(alpha = 0.35f),
-                    trackColor = Color.White.copy(alpha = 0.15f),
-                    drawStopIndicator = {},
-                    gapSize = 0.dp,
-                )
                 Slider(
                     value = scrubbing ?: (playback.position.toFloat() / duration).coerceIn(0f, 1f),
                     onValueChange = {
@@ -963,9 +969,9 @@ private fun Controls(
                     colors = SliderDefaults.colors(
                         thumbColor = MaterialTheme.colorScheme.primary,
                         activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.38f),
                     ),
-                    modifier = Modifier.fillMaxWidth().height(24.dp),
+                    modifier = Modifier.fillMaxWidth().height(20.dp),
                 )
             }
         }

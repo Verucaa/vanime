@@ -106,6 +106,8 @@ import com.vanim.ui.components.RefreshHairline
 import com.vanim.ui.components.PosterRow
 import com.vanim.ui.components.SectionHeader
 import com.vanim.ui.components.SkeletonBox
+import com.vanim.ui.theme.BrandWordmark
+import com.vanim.ui.theme.brandStyledText
 import com.vanim.util.airTime
 import com.vanim.util.compactNumber
 import com.vanim.util.relativeTime
@@ -124,6 +126,7 @@ fun HomeRoute(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onSchedule: () -> Unit,
+    onLibrary: () -> Unit,
     onExplore: (genre: String?) -> Unit,
 ) {
     val vm: HomeViewModel = fuwaViewModel { c, _ ->
@@ -145,6 +148,7 @@ fun HomeRoute(
         onSearch = onSearch,
         onSettings = onSettings,
         onSchedule = onSchedule,
+        onLibrary = onLibrary,
         onExplore = onExplore,
     )
 }
@@ -164,28 +168,45 @@ private fun HomeScreen(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onSchedule: () -> Unit,
+    onLibrary: () -> Unit,
     onExplore: (String?) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val feed = state.feed
     var showUpdateSheet by remember { mutableStateOf(false) }
+    val catalog = remember(feed.popular, feed.today, feed.thisSeason, feed.latest) {
+        (feed.popular + feed.today + feed.thisSeason + feed.latest.map { it.anime }).distinctBy { it.id }
+    }
+    val hotAnime = remember(feed.thisSeason, feed.popular) {
+        (feed.thisSeason.ifEmpty { feed.popular }).sortedByDescending { it.views }.take(24)
+    }
+    val completedAnime = remember(catalog) {
+        catalog.filter {
+            val status = it.status.trim().uppercase()
+            status in setOf("COMPLETED", "COMPLETE", "FINISHED", "FINISH", "ENDED", "END") ||
+                status.contains("COMPLETE") || status.contains("FINISH")
+        }
+            .sortedByDescending { it.views }
+            .take(24)
+    }
+    val categoryShelves = remember(catalog) {
+        QuickGenres.mapNotNull { genre ->
+            val titles = catalog.filter { anime -> anime.genres.any { it.trim().equals(genre, ignoreCase = true) } }
+                .sortedByDescending { it.views }
+                .take(14)
+            titles.takeIf { it.isNotEmpty() }?.let { genre to it }
+        }
+    }
 
     PullToRefreshBox(isRefreshing = feed.refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
         LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), modifier = Modifier.fillMaxSize()) {
-            item(key = "hero") {
-                val heroLoading = feed.loading && state.hero.isEmpty()
-                Crossfade(heroLoading, animationSpec = tween(Motion.Medium), label = "hero") { loading ->
-                    if (loading) {
-                        SkeletonBox(Modifier.fillMaxWidth().height(HeroHeight), shape = MaterialTheme.shapes.extraSmall)
-                    } else if (state.hero.isNotEmpty()) {
-                        HeroPager(state.hero, favoriteIds, onToggleFavorite) { onAnimeClick(it, "home-hero") }
-                    } else {
-                        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars).height(72.dp))
-                    }
+            item(key = "topSpacer") {
+                Column {
+                    Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+                    Spacer(Modifier.height(56.dp))
                 }
             }
 
-            // Below the hero, not under the status bar where the edge-to-edge hero starts.
             if (update != null) {
                 item(key = "updateBanner") {
                     UpdateBanner(update, onClick = { showUpdateSheet = true }, onDismiss = onDismissUpdate)
@@ -196,9 +217,16 @@ private fun HomeScreen(
                 item { ErrorState(feed.error, onRefresh) }
             }
 
-            if (state.continueWatching.isNotEmpty()) {
-                item(key = "cw") {
-                    Section("Lanjutkan Nonton") {
+            item(key = "watchHistory") {
+                Section("Riwayat Ditonton", onSeeAll = onLibrary) {
+                    if (state.continueWatching.isEmpty()) {
+                        Text(
+                            "Belum ada riwayat tontonan.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    } else {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -211,9 +239,16 @@ private fun HomeScreen(
                 }
             }
 
-            if (feed.loading || feed.latest.isNotEmpty()) {
-                item(key = "latest") {
-                    Section("Episode Terbaru") {
+            item(key = "latest") {
+                Section("New Update Anime", onSeeAll = { onExplore(null) }) {
+                    if (feed.latest.isEmpty() && !feed.loading) {
+                        Text(
+                            "Belum ada update episode yang tersedia.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    } else {
                         val releases = remember(feed.latest) { feed.latest.associateBy { it.anime.id } }
                         PosterRow(feed.latest.map { it.anime }, feed.loading, { onAnimeClick(it, "home-latest") }, origin = "home-latest", isNew = { true }, caption = { a ->
                             releases[a.id]?.let { r ->
@@ -223,6 +258,46 @@ private fun HomeScreen(
                                     .ifBlank { null }
                             }
                         })
+                    }
+                }
+            }
+
+            item(key = "popular") {
+                Section("Terpopuler Vanim", subtitle = "Paling banyak ditonton", onSeeAll = { onExplore(null) }) {
+                    val top = feed.popular.take(10)
+                    if (top.isEmpty()) {
+                        PosterRow(top, feed.loading, { onAnimeClick(it, "home-popular") })
+                    } else {
+                        RankedRow(top, { onAnimeClick(it, "home-popular") }, origin = "home-popular")
+                    }
+                }
+            }
+
+            if (feed.loading || hotAnime.isNotEmpty()) {
+                item(key = "hot") {
+                    Section("Hot Anime", subtitle = "Paling ramai di antara anime tayang", onSeeAll = { onExplore(null) }) {
+                        PosterRow(
+                            hotAnime, feed.loading, { onAnimeClick(it, "home-hot") }, origin = "home-hot",
+                            caption = { "${compactNumber(it.views)} ditonton" },
+                        )
+                    }
+                }
+            }
+
+            item(key = "completed") {
+                Section("Completed Anime", subtitle = "Anime yang sudah selesai", onSeeAll = { onExplore(null) }) {
+                    if (completedAnime.isEmpty() && !feed.loading) {
+                        Text(
+                            "Belum ada anime selesai di data yang tersedia.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    } else {
+                        PosterRow(
+                            completedAnime, feed.loading, { onAnimeClick(it, "home-completed") }, origin = "home-completed",
+                            caption = { anime -> anime.displayYear.takeIf { it.isNotBlank() } },
+                        )
                     }
                 }
             }
@@ -237,37 +312,24 @@ private fun HomeScreen(
                 }
             }
 
-            if (feed.loading || feed.thisSeason.isNotEmpty()) {
-                item(key = "season") {
-                    Section("Sedang Tayang", subtitle = "Anime ongoing musim ini") {
-                        PosterRow(
-                            feed.thisSeason, feed.loading, { onAnimeClick(it, "home-season") },
-                            origin = "home-season", caption = { "${compactNumber(it.views)} ditonton" },
-                        )
-                    }
-                }
-            }
-
-            item(key = "popular") {
-                Section("Terpopuler", subtitle = "Paling banyak ditonton", onSeeAll = { onExplore(null) }) {
-                    val top = feed.popular.take(10)
-                    if (top.isEmpty()) {
-                        PosterRow(top, feed.loading, { onAnimeClick(it, "home-popular") })
-                    } else {
-                        RankedRow(top, { onAnimeClick(it, "home-popular") }, origin = "home-popular")
-                    }
-                }
-            }
-
             item(key = "genres") {
-                Section("Jelajahi Genre") {
+                Section("Kategori Anime", onSeeAll = { onExplore(null) }) {
                     FlowRow(
                         Modifier.padding(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        QuickGenres.forEach { g -> TagChip(g, onClick = { onExplore(g) }) }
+                        QuickGenres.forEach { genre -> TagChip(genre, onClick = { onExplore(genre) }) }
                     }
+                }
+            }
+
+            items(categoryShelves, key = { "genre-${it.first}" }) { (genre, titles) ->
+                Section("$genre Anime", onSeeAll = { onExplore(genre) }) {
+                        PosterRow(
+                            titles, feed.loading, { onAnimeClick(it, "home-genre-$genre") }, origin = "home-genre-$genre",
+                            caption = { anime -> anime.displayYear.takeIf { it.isNotBlank() } },
+                    )
                 }
             }
         }
@@ -304,7 +366,7 @@ private fun UpdateBanner(info: UpdateRepository.UpdateInfo, onClick: () -> Unit,
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                "Update ${info.tag.removePrefix("v")} tersedia — ketuk untuk lihat perubahan",
+                "Update baru tersedia — ketuk untuk lihat perubahan",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f).padding(horizontal = 10.dp).clickable(onClick = onClick),
@@ -327,22 +389,25 @@ private fun UpdateBanner(info: UpdateRepository.UpdateInfo, onClick: () -> Unit,
 @Composable
 private fun UpdateSheet(info: UpdateRepository.UpdateInfo, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val displayVersion = info.tag.removePrefix("v").takeIf { it.matches(Regex("\\d+\\.\\d+\\.\\d+")) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.SystemUpdateAlt, null, tint = MaterialTheme.colorScheme.primary)
                 Text(
-                    info.title,
+                    brandStyledText(info.title),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(start = 10.dp),
                 )
             }
-            Text(
-                info.tag.removePrefix("v"),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            displayVersion?.let { version ->
+                Text(
+                    version,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Text(
                 info.notes.ifBlank { "Tanpa catatan rilis." },
@@ -388,7 +453,7 @@ private fun Section(
     content: @Composable () -> Unit,
 ) {
     Column(Modifier.padding(top = 24.dp)) {
-        SectionHeader(title, subtitle = subtitle, onSeeAll = onSeeAll)
+        SectionHeader(title, subtitle = subtitle, onSeeAll = onSeeAll, seeAllLabel = "Show More")
         Spacer(Modifier.height(12.dp))
         content()
     }
@@ -411,22 +476,13 @@ private fun HomeTopBar(solid: Boolean, syncing: Boolean, onSearch: () -> Unit, o
                 .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Wordmark(onDark = !solid)
+            BrandWordmark()
             Spacer(Modifier.weight(1f))
             val tint = if (solid) MaterialTheme.colorScheme.onSurface else Color.White
             IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, "Cari", tint = tint) }
             IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Pengaturan", tint = tint) }
         }
         RefreshHairline(syncing)
-    }
-}
-
-@Composable
-fun Wordmark(onDark: Boolean = false) {
-    val style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, letterSpacing = (-0.03).em)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("VA", style = style, color = MaterialTheme.colorScheme.primary)
-        Text("NIM", style = style, color = if (onDark) Color.White else MaterialTheme.colorScheme.onSurface)
     }
 }
 

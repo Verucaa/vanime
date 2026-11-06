@@ -40,6 +40,7 @@ class UpdateRepository(private val settingsStore: SettingsStore) {
 
     /** The release tag this build was produced from, e.g. "build-8" or "v2.1.0". */
     private fun currentTag(): String {
+        BuildConfig.UPDATE_RELEASE_TAG.takeIf { it.isNotBlank() }?.let { return it }
         val versionName = BuildConfig.VERSION_NAME
         return if (versionName.contains("build.")) {
             "build-" + versionName.substringAfterLast('.')
@@ -58,9 +59,12 @@ class UpdateRepository(private val settingsStore: SettingsStore) {
         settingsStore.markUpdateChecked()
         if (!isNewerRelease(release.tagName, currentTag)) return@withContext null
 
+        val cleanTitle = release.name.orEmpty()
+            .replace(Regex("(?i)[\\s-]*build[ .-]?\\d+"), "")
+            .trim()
         UpdateInfo(
             tag = release.tagName,
-            title = release.name?.takeIf { it.isNotBlank() } ?: "Vanim ${release.tagName.removePrefix("v")}",
+            title = cleanTitle.ifBlank { "Vanim update" },
             notes = release.body.orEmpty().trim(),
             apkUrl = release.assets.lastOrNull { it.name.endsWith(".apk") }?.url
                 ?: release.assets.firstOrNull()?.url,

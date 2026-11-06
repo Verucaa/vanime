@@ -81,6 +81,7 @@ import com.vanim.ui.motion.sharedPosterKey
 import com.vanim.ui.motion.staggerIn
 import com.vanim.data.local.WatchHistoryEntity
 import com.vanim.util.statusLabel
+import com.vanim.ui.theme.brandStyledText
 
 /** Network image with a tonal placeholder so empty slots never flash white. */
 @Composable
@@ -288,20 +289,21 @@ fun SectionHeader(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     onSeeAll: (() -> Unit)? = null,
+    seeAllLabel: String = "Lihat semua",
 ) {
     Row(
         modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(brandStyledText(title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (subtitle != null) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (onSeeAll != null) {
             TextButton(onClick = onSeeAll) {
-                Text("Lihat semua", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(seeAllLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

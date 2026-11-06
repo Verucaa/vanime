@@ -82,6 +82,9 @@ val PlusJakarta = FontFamily(
     Font(R.font.plus_jakarta_sans_extrabold, FontWeight.ExtraBold),
 )
 
+val Polea = FontFamily(Font(R.font.polea_extra_bold, FontWeight.ExtraBold))
+val VanimBlue = Color(0xFF55C8FF)
+
 private val AppTypography = Typography().run {
     copy(
         displayLarge = displayLarge.copy(fontFamily = PlusJakarta),

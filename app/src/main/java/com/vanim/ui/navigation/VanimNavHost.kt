@@ -37,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.vanim.ui.components.OfflinePill
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +83,8 @@ import com.vanim.ui.home.HomeRoute
 import com.vanim.ui.library.LibraryRoute
 import com.vanim.ui.legal.LegalRoute
 import com.vanim.ui.player.PlayerRoute
+import com.vanim.ui.player.MiniPlayer
+import com.vanim.ui.player.MiniPlayerItem
 import com.vanim.ui.schedule.ScheduleRoute
 import com.vanim.ui.settings.SettingsRoute
 
@@ -168,6 +173,7 @@ private fun NavHostController.navigateTab(route: String) = navigate(route) {
 @Composable
 fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> Unit = {}) {
     val nav = rememberNavController()
+    var miniPlayer by remember { mutableStateOf<MiniPlayerItem?>(null) }
     val backStack by nav.currentBackStackEntryAsState()
     val destination = backStack?.destination
     val currentTab = Tab.entries.firstOrNull { tab -> destination?.hierarchy?.any { it.route == tab.route } == true }
@@ -183,13 +189,24 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
     val container = (LocalContext.current.applicationContext as VanimApp).container
     val animeRepository = container.animeRepository
     val netState by container.networkStatus.state.collectAsStateWithLifecycle()
+    fun launchPlayer(
+        animeId: String,
+        episodeId: String,
+        number: String,
+        thumbnail: String,
+        title: String,
+        shared: String? = null,
+    ) {
+        miniPlayer = MiniPlayerItem(animeId, episodeId, number, title.ifBlank { "Anime" }, thumbnail)
+        nav.navigate(Routes.player(animeId, episodeId, number, thumbnail, shared))
+    }
     val openAnime: (Anime, String) -> Unit = { anime, from ->
         // The detail header needs the poster on its first frame to be the shared poster's landing spot.
         animeRepository.prime(anime)
         nav.navigate(Routes.detail(anime.id, from))
     }
-    val play: (String, Episode, String?, String) -> Unit = { animeId, ep, shared, thumb ->
-        nav.navigate(Routes.player(animeId, ep.id, ep.number, thumb, shared))
+    val play: (String, Episode, String?, String, String) -> Unit = { animeId, ep, shared, thumb, title ->
+        launchPlayer(animeId, ep.id, ep.number, ep.thumbnail.ifBlank { thumb }, title, shared)
     }
     val reduceMotion = rememberReduceMotion()
     // Fresh Explore entry (no restoreState) so the new genre/focus arguments take effect.
@@ -254,14 +271,13 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                                 HomeRoute(
                                     onAnimeClick = openAnime,
                                     onContinue = { e ->
-                                        nav.navigate(
-                                            Routes.player(
-                                                e.animeId, e.episodeId, e.episodeNumber,
-                                                e.episodeThumbnail.ifBlank { e.animeCover },
-                                                shared = sharedEpisodeKey(e.episodeId, "home-cw"),
-                                            ),
+                                        launchPlayer(
+                                            e.animeId, e.episodeId, e.episodeNumber,
+                                            e.episodeThumbnail.ifBlank { e.animeCover }, e.animeTitle,
+                                            sharedEpisodeKey(e.episodeId, "home-cw"),
                                         )
                                     },
+                                    onLibrary = { nav.navigateTab(Routes.LIBRARY) },
                                     onSearch = { openExplore(null, true) },
                                     onSettings = { nav.navigate(Routes.SETTINGS) },
                                     onSchedule = { nav.navigateTab(Routes.SCHEDULE) },
@@ -286,15 +302,18 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                                 LibraryRoute(
                                     onAnimeClick = openAnime,
                                     onResume = { e ->
-                                        nav.navigate(
-                                            Routes.player(
-                                                e.animeId, e.episodeId, e.episodeNumber,
-                                                e.episodeThumbnail.ifBlank { e.animeCover },
-                                                shared = sharedEpisodeKey(e.episodeId, "library"),
-                                            ),
+                                        launchPlayer(
+                                            e.animeId, e.episodeId, e.episodeNumber,
+                                            e.episodeThumbnail.ifBlank { e.animeCover }, e.animeTitle,
+                                            sharedEpisodeKey(e.episodeId, "library"),
                                         )
                                     },
-                                    onPlayDownload = { d -> nav.navigate(Routes.player(d.animeId, d.episodeId, d.episodeNumber)) },
+                                    onPlayDownload = { d ->
+                                        launchPlayer(
+                                            d.animeId, d.episodeId, d.episodeNumber,
+                                            d.episodeThumbnail.ifBlank { d.animePoster }, d.animeTitle,
+                                        )
+                                    },
                                 )
                             }
                         }
@@ -310,7 +329,7 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                                     origin = entry.from(),
                                     entryKey = entry.id,
                                     onBack = { nav.popBackStack() },
-                                    onPlay = { anime, ep, shared, thumb -> play(anime.id, ep, shared, thumb) },
+                                    onPlay = { anime, ep, shared, thumb -> play(anime.id, ep, shared, thumb, anime.title) },
                                     onAnimeClick = openAnime,
                                     onGenre = { g -> openExplore(g, false) },
                                 )
@@ -329,6 +348,7 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
                             Scoped {
                                 PlayerRoute(
                                     sharedKey = entry.arguments?.getString("shared")?.takeIf { it.isNotBlank() },
+                                    onMiniPlayer = { miniPlayer = it },
                                     onBack = { nav.popBackStack() },
                                 )
                             }
@@ -357,7 +377,25 @@ fun VanimNavHost(initialAnimeId: String? = null, onInitialAnimeConsumed: () -> U
             }
             // Floats over the tab content just above the bar, so showing it never shifts the layout.
             if (currentTab != null) {
-                OfflinePill(netState, reduceMotion, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
+                val activeMiniPlayer = miniPlayer
+                if (activeMiniPlayer != null) {
+                    MiniPlayer(
+                        item = activeMiniPlayer,
+                        onPlay = {
+                            launchPlayer(
+                                activeMiniPlayer.animeId,
+                                activeMiniPlayer.episodeId,
+                                activeMiniPlayer.episodeNumber,
+                                activeMiniPlayer.thumbnail,
+                                activeMiniPlayer.title,
+                            )
+                        },
+                        onClose = { miniPlayer = null },
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                } else {
+                    OfflinePill(netState, reduceMotion, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
+                }
             }
         }
     }

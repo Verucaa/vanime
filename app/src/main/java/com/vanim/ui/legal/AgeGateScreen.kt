@@ -26,6 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.vanim.ui.theme.BrandWordmark
+import com.vanim.ui.theme.brandStyledText
 
 /**
  * One-time age confirmation, shown before the catalogue is reachable.
@@ -44,12 +47,9 @@ fun AgeGateScreen(onConfirm: () -> Unit, onExit: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                "Vanim",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-            )
+            AnimatedVanimMark()
+            Spacer(Modifier.height(12.dp))
+            BrandWordmark(fontSize = 34.sp)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Sebelum mulai",
@@ -58,11 +58,11 @@ fun AgeGateScreen(onConfirm: () -> Unit, onExit: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Aplikasi ini menampilkan katalog anime dari layanan pihak ketiga. Sebagian judul " +
+                brandStyledText("Aplikasi ini menampilkan katalog anime dari layanan pihak ketiga. Sebagian judul " +
                     "mungkin tidak cocok untuk anak-anak.\n\n" +
                     "Vanim ditujukan untuk pengguna berusia 13 tahun ke atas. Aplikasi tidak " +
                     "membuat akun dan tidak mengumpulkan data pribadimu — semua riwayat, favorit, " +
-                    "dan pengaturan hanya tersimpan di perangkat ini.",
+                    "dan pengaturan hanya tersimpan di perangkat ini."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -91,7 +91,7 @@ fun AgeGateScreen(onConfirm: () -> Unit, onExit: () -> Unit) {
                 LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
                     items(LegalText.privacy.split("\n\n")) { paragraph ->
                         Text(
-                            paragraph,
+                            brandStyledText(paragraph),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 8.dp),

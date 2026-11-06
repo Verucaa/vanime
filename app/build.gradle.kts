@@ -8,6 +8,8 @@ plugins {
 // CI injects the release keystore through these env vars (see .github/workflows/build.yml).
 // Without them, release falls back to the debug key so local builds still work.
 val releaseKeystore = System.getenv("KEYSTORE_PATH")?.let { file(it) }?.takeIf { it.exists() }
+val requestedVersionName = System.getenv("VERSION_NAME")?.takeIf { Regex("\\d+\\.\\d+\\.\\d+").matches(it) }
+val updateReleaseTag = System.getenv("UPDATE_RELEASE_TAG").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
 
 android {
   namespace = "com.vanim"
@@ -17,12 +19,12 @@ android {
     applicationId = "com.vanim.app"
     minSdk = 24
     targetSdk = 36
-    // F-Droid & CI pass VERSION_CODE/VERSION_NAME as env vars. Fallback to fixed
-    // values when not set (deterministic, not epoch minutes).
-    versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 2
-    versionName = System.getenv("VERSION_NAME") ?: "2.0.0"
+    // CI may inject a numeric release version; local builds default to this release.
+    versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 5
+    versionName = requestedVersionName ?: "0.0.5"
     // The in-app update checker looks at the repo this APK was built from (a fork checks its own releases).
     buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: ""}\"")
+    buildConfigField("String", "UPDATE_RELEASE_TAG", "\"$updateReleaseTag\"")
   }
 
   signingConfigs {
@@ -45,7 +47,6 @@ android {
     }
     debug {
       applicationIdSuffix = ".debug"
-      versionNameSuffix = "-debug"
     }
   }
   compileOptions {
