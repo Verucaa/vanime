@@ -80,6 +80,7 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
+  implementation(libs.coil.gif)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.media3.datasource.okhttp)
   implementation(libs.media3.exoplayer)

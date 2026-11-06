@@ -1,11 +1,11 @@
 # Kebijakan Privasi Vanim
 
-Terakhir diperbarui: 6 November 2026
+Terakhir diperbarui: 7 November 2026
 
 ## Ringkasan
 
-Vanim tidak memiliki akun, server, iklan, maupun pelacak. Semua data yang kamu buat di
-aplikasi ini disimpan di perangkatmu sendiri dan tidak pernah dikirim ke pengembang.
+Vanim tidak memiliki akun, server milik pengembang, iklan, maupun pelacak. Semua data yang kamu
+buat di aplikasi ini disimpan di perangkatmu sendiri dan tidak pernah dikirim ke pengembang.
 
 ## Data yang disimpan di perangkat
 
@@ -27,15 +27,10 @@ Tidak ada satu pun yang dikirim ke pengembang.
 
 ## Koneksi ke layanan pihak ketiga
 
-Agar dapat menampilkan konten, aplikasi terhubung langsung dari perangkat ke:
-
-| Layanan | Tujuan | Data yang terlihat oleh layanan |
-| --- | --- | --- |
-| `xyz-api.animein.net` | Katalog anime, jadwal, poster, tautan aliran video | Alamat IP, User-Agent, permintaan katalog |
-| `api.github.com` | Pemeriksaan versi jika repositori rilis diatur saat build | Alamat IP, User-Agent |
-
-Repositori Vanim belum dikonfigurasi; pemeriksaan versi GitHub tidak berjalan sampai penerbit memasok repositori pada saat build. Jika layanan pihak ketiga digunakan, pengembang tidak menerima, menyimpan, atau menjual data tersebut. Penggunaan layanan pihak
-ketiga tunduk pada kebijakan privasi masing-masing layanan.
+Untuk menampilkan katalog, jadwal, poster, dan tautan pemutaran, Vanim mengambil informasi
+melalui server pihak ketiga. Permintaan konten dikirim langsung dari perangkat ke layanan
+tersebut, dan penggunaannya tunduk pada kebijakan privasi masing-masing penyedia. Vanim tidak
+mengoperasikan server untuk konten tersebut.
 
 ## Izin aplikasi
 

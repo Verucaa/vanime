@@ -207,6 +207,14 @@ private fun HomeScreen(
                 }
             }
 
+            if (state.hero.isNotEmpty()) {
+                item(key = "heroBanner") {
+                    HeroPager(state.hero, favoriteIds, onToggleFavorite) { anime ->
+                        onAnimeClick(anime, "home-hero")
+                    }
+                }
+            }
+
             if (update != null) {
                 item(key = "updateBanner") {
                     UpdateBanner(update, onClick = { showUpdateSheet = true }, onDismiss = onDismissUpdate)
@@ -476,7 +484,7 @@ private fun HomeTopBar(solid: Boolean, syncing: Boolean, onSearch: () -> Unit, o
                 .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BrandWordmark()
+            BrandWordmark(fontSize = 24.sp)
             Spacer(Modifier.weight(1f))
             val tint = if (solid) MaterialTheme.colorScheme.onSurface else Color.White
             IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, "Cari", tint = tint) }

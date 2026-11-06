@@ -35,11 +35,11 @@ object LegalText {
     const val DEVELOPER_WEB = "Belum dikonfigurasi"
 
     val privacy = """
-        Terakhir diperbarui: 6 November 2026
+        Terakhir diperbarui: 7 November 2026
 
         RINGKASAN
-        Vanim tidak memiliki akun, server, iklan, maupun pelacak. Semua data yang kamu buat
-        di aplikasi ini disimpan di perangkatmu sendiri dan tidak pernah dikirim ke kami.
+        Vanim tidak memiliki akun, server milik pengembang, iklan, maupun pelacak. Semua data yang
+        kamu buat di aplikasi ini disimpan di perangkatmu sendiri dan tidak pernah dikirim ke kami.
 
         DATA YANG DISIMPAN DI PERANGKAT
         • Riwayat tontonan beserta posisi dan durasi episode (untuk "Lanjutkan Nonton").
@@ -58,13 +58,10 @@ object LegalText {
         • Tidak ada cookie. Aplikasi ini bukan browser dan tidak memuat halaman web.
 
         KONEKSI KE LAYANAN PIHAK KETIGA
-        Agar dapat menampilkan konten, aplikasi terhubung langsung dari perangkatmu ke:
-        • xyz-api.animein.net — katalog anime, jadwal rilis, poster, dan tautan aliran video.
-        • api.github.com — hanya jika repositori rilis dikonfigurasi oleh pembuat build.
-        Saat terhubung, alamat IP dan User-Agent perangkatmu secara teknis terlihat oleh layanan
-        tersebut, sebagaimana berlaku pada setiap koneksi internet. Kami tidak menerima, menyimpan,
-        atau menjual data tersebut. Penggunaan layanan pihak ketiga tunduk pada kebijakan privasi
-        masing-masing layanan.
+        Untuk menampilkan katalog, jadwal, poster, dan tautan pemutaran, Vanim mengambil informasi
+        melalui server pihak ketiga. Permintaan konten dikirim langsung dari perangkatmu ke layanan
+        tersebut, dan penggunaannya tunduk pada kebijakan privasi masing-masing penyedia. Vanim tidak
+        mengoperasikan server untuk konten tersebut.
 
         IZIN APLIKASI
         • INTERNET — mengambil katalog dan memutar video. Wajib.

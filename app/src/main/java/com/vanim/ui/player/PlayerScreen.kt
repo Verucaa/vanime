@@ -163,7 +163,7 @@ private const val TAG = "VanimPlayer"
 private val Speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 @OptIn(UnstableApi::class)
-private fun buildPlayer(context: Context): ExoPlayer {
+fun buildPlayer(context: Context): ExoPlayer {
     val client = (context.applicationContext as VanimApp).container.videoHttpClient
     val http = OkHttpDataSource.Factory(client).setUserAgent(AnimeApiService.USER_AGENT)
     // DefaultDataSource routes file:// (offline downloads) locally and everything else through OkHttp.
@@ -233,6 +233,7 @@ private fun ExoPlayer.effectivePosition(playback: PlaybackState): Long = playbac
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerRoute(
+    player: ExoPlayer,
     /** Key of the image (episode thumbnail or detail backdrop) that flies into the video area. */
     sharedKey: String? = null,
     onMiniPlayer: (MiniPlayerItem) -> Unit,
@@ -264,7 +265,6 @@ fun PlayerRoute(
     val inPip = pip?.isInPip?.value == true
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    val player = remember { buildPlayer(context) }
     val initialEpisodeId = remember { state.episode.id }
     // The nav-arg thumbnail, which is what flew in; the stream may report a different URL for the same image.
     val initialThumbnail = remember { state.episode.thumbnail }
@@ -351,7 +351,6 @@ fun PlayerRoute(
         onDispose {
             vm.saveProgress(player.currentPosition, player.duration)
             player.removeListener(listener)
-            player.release()
             view.keepScreenOn = false
         }
     }
@@ -361,13 +360,15 @@ fun PlayerRoute(
         playback.ended = false
         playback.pendingSeek = null
         playback.firstFrame = false
-        val source = state.source ?: run {
-            player.stop()
-            return@LaunchedEffect
+        val source = state.source ?: return@LaunchedEffect
+        val currentUrl = player.currentMediaItem?.localConfiguration?.uri?.toString()
+        if (currentUrl != source.url) {
+            player.setMediaItem(MediaItem.fromUri(source.url), state.startPositionMs.coerceAtLeast(0))
+            player.prepare()
+            player.playWhenReady = !sleepExpired
+        } else {
+            playback.firstFrame = player.videoSize.width > 0 && player.videoSize.height > 0
         }
-        player.setMediaItem(MediaItem.fromUri(source.url), state.startPositionMs.coerceAtLeast(0))
-        player.prepare()
-        player.playWhenReady = !sleepExpired
     }
 
     LaunchedEffect(player) {
@@ -404,7 +405,6 @@ fun PlayerRoute(
 
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         vm.saveProgress(player.currentPosition, player.duration)
-        player.pause()
     }
 
     // --- PiP + fullscreen -----------------------------------------------------------------
@@ -439,6 +439,7 @@ fun PlayerRoute(
             if (enable) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
     BackHandler(enabled = fullscreen) { setFullscreen(false) }
+    BackHandler(enabled = !fullscreen && playback.isPlaying) { onBack() }
 
     // --- Layout ---------------------------------------------------------------------------
     var showSettings by remember { mutableStateOf(false) }

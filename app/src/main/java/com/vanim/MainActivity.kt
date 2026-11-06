@@ -13,12 +13,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vanim.data.local.ThemeMode
 import com.vanim.ui.legal.AgeGateScreen
+import com.vanim.ui.legal.VideoSplashScreen
 import com.vanim.ui.navigation.VanimNavHost
 import com.vanim.ui.player.LocalPipController
 import com.vanim.ui.player.PipController
@@ -48,6 +51,7 @@ class MainActivity : ComponentActivity() {
             val current = settings ?: return@setContent
             val confirmed = ageConfirmed ?: return@setContent
             val scope = rememberCoroutineScope()
+            var splashFinished by remember { mutableStateOf(false) }
 
             val dark = when (current.themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -62,13 +66,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
             // The notification prompt only appears after the age gate is cleared.
-            LaunchedEffect(confirmed) {
-                if (confirmed) requestNotificationPermissionIfNeeded()
+            LaunchedEffect(confirmed, splashFinished) {
+                if (confirmed && splashFinished) requestNotificationPermissionIfNeeded()
             }
 
             VanimTheme(current) {
                 CompositionLocalProvider(LocalPipController provides pip) {
-                    if (confirmed) {
+                    if (!splashFinished) {
+                        VideoSplashScreen(onFinished = { splashFinished = true })
+                    } else if (confirmed) {
                         VanimNavHost(
                             initialAnimeId = pendingAnimeId.value,
                             onInitialAnimeConsumed = { pendingAnimeId.value = null },
